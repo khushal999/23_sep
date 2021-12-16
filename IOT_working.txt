@@ -1,0 +1,195 @@
+/* For
+   URL:   thingspeak.com
+   email:novitapotdukhe11@gmail.com
+   password: Novita@123
+*/
+
+#include <WiFi.h>
+#include "DHT.h"
+#include <Adafruit_Sensor.h>
+String apiKey = "35QDFB02YDROZ3N2"; 
+ 
+const char *ssid =  "BDCE";     
+const char *pass =  "bdcoe123";
+const char* server = "api.thingspeak.com";
+
+int flame=0, flame_val=0;
+
+#define DHTTYPE DHT11
+#define TEMP_THRESH 30
+
+#define RELAY_ON  LOW
+#define RELAY_OFF HIGH
+
+#define LED_BUILTIN 2
+#define LED_OUT   21 
+#define BUZZER    4
+#define PUMP      5
+
+#define DHT_IN    18
+#define FLAME_IN  19
+
+#define MQ2_IN    36
+#define MQ2_digital 22
+
+DHT dht(DHT_IN, DHTTYPE);  
+WiFiClient client;
+
+static int count=0;
+ 
+void setup() 
+{
+       Serial.begin(115200);
+       pinMode(LED_BUILTIN, OUTPUT);
+       pinMode(LED_OUT, OUTPUT);
+       pinMode(BUZZER, OUTPUT);
+       pinMode(PUMP, OUTPUT);
+
+       pinMode(DHT_IN, INPUT);
+       pinMode(FLAME_IN, INPUT);
+       pinMode(MQ2_IN, INPUT);
+       
+       digitalWrite(LED_OUT,LOW);
+       digitalWrite(BUZZER,RELAY_OFF);
+       digitalWrite(PUMP,RELAY_OFF);
+        
+       delay(10);
+ 
+       Serial.println("Connecting to ");
+       Serial.println(ssid);
+   
+       WiFi.begin(ssid, pass);
+ 
+       while (WiFi.status() != WL_CONNECTED) 
+       {
+            delay(500);
+            digitalWrite(LED_BUILTIN, HIGH);
+            delay(1000);                      
+            digitalWrite(LED_BUILTIN, LOW);
+            Serial.print(".");
+       }
+       Serial.println("");
+       Serial.println("WiFi connected");
+       dht.begin();
+}
+
+float our_oxygen()
+{
+    delay(2000);
+    float oxygen=0;
+    count++;  
+    if((count>0) && (count <= 40))
+    {
+        oxygen=(21-(count*0.4));
+    }
+    else
+        oxygen = 4.7;
+        
+    return oxygen;
+}
+
+
+void data_update(float temp, float gas, int flame_val)
+{
+
+      if (client.connect(server,80))   //   "184.106.153.149" or api.thingspeak.com
+      {  
+           String postStr = apiKey;
+           postStr +="&field1=";
+           postStr += String(temp);
+           postStr +="&field2=";
+           postStr += String(gas);
+           postStr +="&field3=";
+           postStr += String(flame_val);
+           postStr += "\r\n\r\n";
+ 
+           client.print("POST /update HTTP/1.1\n");
+           client.print("Host: api.thingspeak.com\n");
+           client.print("Connection: close\n");
+           client.print("X-THINGSPEAKAPIKEY: "+apiKey+"\n");
+           client.print("Content-Type: application/x-www-form-urlencoded\n");
+           client.print("Content-Length: ");
+           client.print(postStr.length());
+           client.print("\n\n");
+           client.print(postStr);
+           
+           Serial.println("Data Sended to Thingspeak.");
+     }
+          //client.stop();
+ 
+          Serial.println("....................... BDCE Sevagram ......................");
+        Serial.println(" ");
+  // thingspeak needs minimum 1.5 sec delay between updates
+   delay(5000);
+}
+ 
+void loop() 
+{
+  digitalWrite(LED_BUILTIN, LOW);
+/********************* Read Temperature **********************/
+   float temp = dht.readTemperature();
+   if(temp)
+   {
+    Serial.print("Temperature:: ");
+    Serial.println(temp);
+    if (temp > TEMP_THRESH) {
+          Serial.println("Temperature is more");
+          digitalWrite (BUZZER, RELAY_ON);
+          delay(1000);
+          digitalWrite (BUZZER, RELAY_OFF);
+      }
+   }  
+   else
+    Serial.println("Unable to read Temperature");
+
+/********************* Read Gas **********************/
+
+    int gassensorDigital = digitalRead(MQ2_digital);
+
+    Serial.print("Gas Digital: ");
+    Serial.print(gassensorDigital);
+    Serial.print("\t");
+    Serial.print("\t");
+    
+    float oxygen=20;
+    if (!gassensorDigital) {
+       Serial.println("CO2 is increasing...!!!");
+       oxygen = our_oxygen();
+       digitalWrite (BUZZER, RELAY_ON);
+       delay(1000);
+       digitalWrite (BUZZER, RELAY_OFF);
+     }
+    else {
+       Serial.println("CO2 is Limited");
+       count=0;
+   }
+    Serial.print("Oxygen:: ");
+    Serial.println(oxygen);
+
+
+/********************* Read flame **********************/
+  
+    flame = digitalRead(FLAME_IN);
+     if (flame== LOW)
+     {
+        Serial.println("Fire!!!");
+        digitalWrite (PUMP, RELAY_ON);
+        digitalWrite (BUZZER, RELAY_ON);
+        digitalWrite(LED_OUT,HIGH);
+        delay(1000);
+        digitalWrite (BUZZER, RELAY_OFF);
+        digitalWrite(LED_OUT,LOW);
+        flame_val=1;
+     }
+     else
+     {
+        Serial.println("No fire");
+        digitalWrite (PUMP, RELAY_OFF);
+        flame_val=0;
+     }
+ 
+/********************* Send data **********************/
+
+    data_update(temp,oxygen,flame_val);
+      
+}
